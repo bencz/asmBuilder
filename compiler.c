@@ -115,6 +115,13 @@ enum eopcodes {
 	op32bit
 };
 
+#define NUMOPCODES  116
+
+tstr_opcodes str_opcodes[NUMOPCODES] =
+{
+	"aaa",opaaa
+}
+
 int stringlen(char *str)
 {
 	int i=0;
