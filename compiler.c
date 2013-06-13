@@ -52,6 +52,111 @@ tregisters registers[] =
 #endif
 };
 
+typedef struct
+{
+	char name[6];
+	int value;
+} tstr_opcodes;
+
+typedef struct
+{
+	int ocode;
+	int length;
+	unsigned char code[3];
+	unsigned short val1,val2,val3;
+	unsigned short instruct;      // instructions for assembling code
+} topcodes;
+
+enum eopcodes { 
+	opnone		,opaaa		,opaad		,opaam,
+	opaas		,opadc		,opadd		,opand,
+	opclc		,opcld		,opcli		,opcall,
+	opcbw		,opcmc		,opcmp		,opcmpsb,
+	opcmpsw		,opcwd		,opdaa		,opdas,
+	opdec		,opdiv		,ophlt		,opidiv,
+	opimul		,opin		,opinc		,opint,
+	opiret		,opja		,opjae		,opjb,
+	opjbe		,opjc		,opjcxz		,opje,
+	opjg		,opjge		,opjl		,opjle,
+	opjmp		,opjmpf		,opjna		,opjnae,
+	opjnb		,opjnbe		,opjnc		,opjne,
+	opjng		,opjnge		,opjnl		,opjnle,
+	opjno		,opjnp		,opjns		,opjnz,
+	opjo		,opjp		,opjpe		,opjpo,
+	opjs		,opjz		,oplahf		,oplds,
+	oplea		,oples		,oplodsb	,oplodsw,
+	oploop		,oploope	,oploopne	,oploopnz,
+	oploopz		,opmov		,opmovsb	,opmovsw,
+	opmul		,opneg		,opnop		,opnot,
+	opor		,opout		,oppopf		,oppushf,
+	oprcl		,oprcr		,oppop		,oppush,
+	oprep		,oprepe		,oprepne	,oprepnz,
+	oprepz		,opret		,opretf		,oprol,
+	opror		,opsahf		,opsal		,opsar,
+	opsbb		,opsub		,opscasb	,opscasw,
+	opshl		,opshr		,opstc		,opstd,
+	opsti		,opstosb	,opstosw	,optest,
+	opwait		,opxchg		,opxlat		,opxor,
+	op32bit
+};
+
+int stringlen(char *str)
+{
+	int i=0;
+	while(str[i] != 0)
+		i++;
+	return i;
+}
+
+void parse(char *inFile, FILE *fOutPut, int pass)
+{
+#ifndef DEBUG
+	static char readbuffer[READBUFFERSIZE];
+#endif
+
+	FILE *fpin;
+	char *parser;
+	int opcode;
+	unsigned long operands[3];
+	unsigned long immediates[3];
+	int linenum = 0;
+
+	fpin = fopen(inFile, "rt");
+	if(fpin == NULL)
+	{
+		printf("Unable to open file: %s.\n", inFile);
+		exit(1);
+	}
+
+	while(!feof(fpin))
+	{
+		fgets(readbuffer, 256, fpin);
+
+		if(feof(fpin) && *(readbuffer+stringlen(readbuffer)-1) == 10)
+			continue;
+
+		linenum++;
+		parser = readbuffer;
+
+		// continue if not at the end of the line or at a comment :)
+		while(*parser != 0 && *parser != ';' && *parser != 0x0d && *parser != 0x0a)
+		{
+			opcode = opnone;
+
+			// skip whitespace
+			while(*parser == 32 || *parser == 9)
+				parser++;
+
+			if(*parser != 0 && *parser != ';' && *parser != 0x0d && *parser != 0x0a)
+			{
+				if(*parser == '.')
+				{
+				}
+			}
+		}
+	}
+}
+
 char outFile[13], ext[]=".com";
 int main(int argc, char **argv)
 {
