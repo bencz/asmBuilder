@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "defineList.h"
 
 #define lower(x) (((x)>0x40 && (x)<0x5b)?(x)|0x20:(x))
 
