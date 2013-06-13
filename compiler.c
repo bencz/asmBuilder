@@ -7,6 +7,21 @@
 #define READBUFFERSIZE	512
 #define WRITEBUFFERSIZE	512
 
+#ifdef DEBUG
+char readbuffer[READBUFFERSIZE];
+#endif
+
+int buffpos = 0;                 // position in write buffer         
+char wbuffer[WRITEBUFFERSIZE];   // used to buffer the output        
+unsigned long org = 0x100;       // com file start offset           
+unsigned long offset;            // keep tabs of the offset           
+unsigned long filesize;          // keep tabs of the output file size
+char errorflag = 0;              // check for errors               
+unsigned char memreg2val;        // second register in a memory ref   
+unsigned long memimmediate;      // immediate in a mem ref          
+unsigned char PointerRef;        // assemble in 32 bit pointer?    
+char dirtylabels=0;              // see if labels need fixing     
+
 // table to store labels, names and values
 typedef struct sltable
 {
