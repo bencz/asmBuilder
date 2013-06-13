@@ -44,6 +44,12 @@ tregisters registers[] =
 	"sp",0x04,regsp|reg8		,"bp",0x05,reg16|regbp		,"si",0x06,reg16|regsi,
 	"di",0x07,reg16|regdi		,"es",0x00,reges|seg16		,"ds",0x03,regds|seg16,
 	"ss",0x02,regss|seg16		,"cs",0x01,regcs|seg16
+
+#ifdef CODE32BIT
+	,"eax",0x00,regeax|reg32	,"ecx",0x01,regecx|reg32	,"edx",0x02,regedx|reg32
+	,"ebx",0x03,regebx|reg32	,"esp",0x04,regesp|reg32	,"ebp",0x05,regebp|reg32
+	,"esi",0x06,regesi|reg32	,"edi",0x07,regedi|reg32
+#endif
 };
 
 char outFile[13], ext[]=".com";
