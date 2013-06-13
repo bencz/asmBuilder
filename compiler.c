@@ -148,6 +148,18 @@ tstr_opcodes str_opcodes[NUMOPCODES] =
 	"32bit",op32bit
 };
 
+#define NUMINSTRUCTIONS (262+17)
+/* machine language values */
+topcodes opcodes[NUMINSTRUCTIONS] =
+{
+	/* opcode operand1,operand2,operand3 */
+	/* ascii adjusts */
+	opaaa,1,0x37,0x00,0x00,none,none,none,Inothing,
+	opaad,2,0xd5,0x0a,0x00,none,none,none,Inothing,
+	opaam,2,0xd4,0x0a,0x00,none,none,none,Inothing,
+	opaas,1,0x3f,0x00,0x00,none,none,none,Inothing
+};
+
 int stringlen(char *str)
 {
 	int i=0;

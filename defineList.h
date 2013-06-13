@@ -45,7 +45,7 @@
 #define regedi	0x00000240
 
 // instructions
-#define Inothig			0x0000
+#define Inothing		0x0000
 #define Ifirstval		0x0002
 #define Isecondval		0x0004
 #define Iswapval		0x0008
