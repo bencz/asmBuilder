@@ -119,8 +119,34 @@ enum eopcodes {
 
 tstr_opcodes str_opcodes[NUMOPCODES] =
 {
-	"aaa",opaaa
-}
+	"aaa",opaaa,"aad",opaad,"aam",opaam,"aas",opaas,
+	"adc",opadc,"add",opadd,"and",opand,"call",opcall,
+	"cbw",opcbw,"clc",opclc,"cld",opcld,"cli",opcli,"cmc",opcmc,
+	"cmp",opcmp,"cmpsb",opcmpsb,"cmpsw",opcmpsw,"cwd",opcwd,
+	"daa",opdaa,"das",opdas,"dec",opdec,"div",opdiv,"hlt",ophlt,
+	"idiv",opidiv,"imul",opimul,"in",opin,"inc",opinc,"int",opint,
+	"iret",opiret,"ja",opja,"jae",opjae,"jb",opjb,"jbe",opjbe,
+	"jc",opjc,"jcxz",opjcxz,"je",opje,"jg",opjg,"jge",opjge,
+	"jl",opjl,"jle",opjle,"jna",opjna,"jnae",opjnae,"jnb",opjnb,
+	"jnbe",opjnbe,"jnc",opjnc,"jne",opjne,"jng",opjng,"jnge",opjnge,
+	"jnl",opjnl,"jnle",opjnle,"jno",opjno,"jnp",opjnp,"jns",opjns,
+	"jnz",opjnz,"jo",opjo,"jp",opjp,"jpe",opjpe,"jpo",opjpo,
+	"js",opjs,"jz",opjz,"jmp",opjmp,"jmpf",opjmpf,"lahf",oplahf,"lds",oplds,
+	"lea",oplea,"les",oples,"lodsb",oplodsb,"lodsw",oplodsw,
+	"loop",oploop,"loope",oploope,"loopne",oploopne,"loopnz",oploopnz,
+	"loopz",oploopz,"mov",opmov,"movsb",opmovsb,"movsw",opmovsw,
+	"mul",opmul,"neg",opneg,"nop",opnop,"not",opnot,"or",opor,
+	"out",opout,"pop",oppop,"push",oppush,"popf",oppopf,
+	"pushf",oppushf,"rcl",oprcl,"rcr",oprcr,"rep",oprep,
+	"repe",oprepe,"repne",oprepne,"repnz",oprepnz,"repz",oprepz,
+	"ret",opret,"retf",opretf,"rol",oprol,"ror",opror,"sahf",opsahf,
+	"sal",opsal,"sar",opsar,"sbb",opsbb,"scasb",opscasb,
+	"scasw",opscasw,"shl",opshl,"shr",opshr,"stc",opstc,"std",opstd,
+	"sti",opsti,"stosb",opstosb,"stosw",opstosw,"sub",opsub,
+	"test",optest,"wait",opwait,"xchg",opxchg,"xlat",opxlat,
+	"xor",opxor,
+	"32bit",op32bit
+};
 
 int stringlen(char *str)
 {
