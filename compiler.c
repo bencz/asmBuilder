@@ -64,7 +64,7 @@ int main(int argc, char **argv)
 
 	while(*inFile)
 	{
-		if(*inFile == "\\")
+		if(*inFile == '\\')
 			outFileStart = inFile+1;
 		inFile++;
 	}
