@@ -34,10 +34,17 @@ typedef struct
 	unsigned long flag;
 } tregisters;
 
-/* #define NUMREGS 20
+#define NUMREGS 20
 tregisters registers[] =
 {
-}; */
+	"al",0x00,regal|reg8		,"ah",0x04,regah|reg8		,"ax",0x00,regax|reg16,
+	"cl",0x01,regcl|reg8		,"ch",0x05,regch|reg8		,"cx",0x01,regcx|reg16,
+	"dl",0x02,regdl|reg8		,"dh",0x06,regdh|reg8		,"dx",0x02,regdx|reg16,
+	"bl",0x03,regbl|reg8		,"bh",0x07,regbh|reg8		,"bx",0x03,regbx|reg16,
+	"sp",0x04,regsp|reg8		,"bp",0x05,reg16|regbp		,"si",0x06,reg16|regsi,
+	"di",0x07,reg16|regdi		,"es",0x00,reges|seg16		,"ds",0x03,regds|seg16,
+	"ss",0x02,regss|seg16		,"cs",0x01,regcs|seg16
+};
 
 char outFile[13], ext[]=".com";
 int main(int argc, char **argv)
