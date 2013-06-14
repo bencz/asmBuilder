@@ -54,5 +54,5 @@
 #define Icalreg			0x0040
 #define Ijump			0x0080
 #define Iwrite8			0x0100
-#define Icall1			0x0200
-#define Icall2			0x0400
+#define Ical1			0x0200
+#define Ical2			0x0400
