@@ -573,44 +573,48 @@ void parse(char *inFile, FILE *fOutPut, int pass)
 	}
 }
 
-char outFile[13], ext[]=".com";
-int main(int argc, char **argv)
+char outfile[13],ext[]=".com";
+int main(int argc,char * argv[])
 {
 	int i;
-	FILE *fOutPut;
-	char *inFile, *outFileStart;
+	FILE *fpout;
+	char *infile , *outfilestart;
 
-	inFile = argv[1];
-	outFileStart = inFile;
+	infile = argv[1];
+	outfilestart = infile;
 
-	while(*inFile)
+	while (*infile)
 	{
-		if(*inFile == '\\')
-			outFileStart = inFile+1;
-		inFile++;
+		if (*infile == '\\')
+			outfilestart = infile+1;
+		infile++;
 	}
+	infile = outfile;
 
-	inFile = outFile;
-
-	while(*outFileStart != '.' && *outFileStart)
+	while (*outfilestart != '.' && *outfilestart)
 	{
-		*inFile = *outFileStart;
-		inFile++;
-		outFileStart++;
+		*infile = *outfilestart;
+		infile++;
+		outfilestart++;
 	}
-	*inFile = 0;
+	outfilestart = ext;
+	while (*outfilestart)
+	{
+		*infile = *outfilestart;
+		infile++;
+		outfilestart++;
+	}
+	*infile = 0;
 
-	if(argc <= 1)
-		printf("Modo de uso: asmBuilder <fileName>\n");
+	if (argc<=1)
+		printf("Usage: compiler <filename>\n");
 	else
 	{
-		fOutPut = fopen(outFile, "wb");
-
-		for(i=1;i<3;i++)
+		fpout=fopen(outfile,"wb");
+		for (i=1;i<3;i++)
 		{
 		}
-
-		fclose(fOutPut);
+		fclose(fpout);
 	}
 
 	return 0;

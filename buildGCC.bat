@@ -1,0 +1,1 @@
+gcc compiler.c -o compiler.exe
