@@ -524,53 +524,165 @@ int stringlen(char *str)
 	return i;
 }
 
-void parse(char *inFile, FILE *fOutPut, int pass)
+// check to see if sub-string is in the string at the current dest
+char matches(char *source, char *dest)
+{
+	int i,j=0;
+	if (source == NULL)
+		printf("1\n");
+	for (i=0;source[i] != 32 && source[i] != 9 && source[i] != ']'&&
+		source[i] != '+' && source[i] != '-' && source[i] != 0x0d
+		&& source[i] != 0x0a && source[i] != 0 && source[i] != ','
+		&& source[i] != ':' && source[i] != '('&& source[i] != '['&&
+		source[i] != '*' && source[i] != '/' && source[i] != ';'
+		;i++)
+		if (lower(source[i]) != lower(dest[i]))
+			return 0;
+	while (dest[j]!=0 && dest[j]!=']')
+		j++;
+	if (i<j)
+		return 0;
+	else
+		return 1;
+}
+
+void parse(char * infile,FILE * fpout,int pass)
 {
 #ifndef DEBUG
 	static char readbuffer[READBUFFERSIZE];
 #endif
-
-	FILE *fpin;
-	char *parser;
+	FILE * fpin;
+	char * parser;
 	int opcode;
 	unsigned long operands[3];
 	unsigned long immediates[3];
 	int linenum = 0;
 
-	fpin = fopen(inFile, "rt");
-	if(fpin == NULL)
+	fpin=fopen(infile,"rt");
+	if (fpin == NULL)
 	{
-		printf("Unable to open file: %s.\n", inFile);
+		printf("Unable to open file %s.\n",infile);
 		exit(1);
 	}
-
-	while(!feof(fpin))
+	while (!feof(fpin))
 	{
-		fgets(readbuffer, 256, fpin);
-
-		if(feof(fpin) && *(readbuffer+stringlen(readbuffer)-1) == 10)
+		fgets(readbuffer,256,fpin);
+		if (feof(fpin) && *(readbuffer+stringlen(readbuffer)-1) == 10)
 			continue;
-
-		linenum++;
+		linenum ++;
 		parser = readbuffer;
-
-		// continue if not at the end of the line or at a comment :)
-		while(*parser != 0 && *parser != ';' && *parser != 0x0d && *parser != 0x0a)
+		// keep going if not at the end of the line or at a comment
+		while (*parser != 0 && *parser != ';' && *parser != 0x0d
+			&& *parser != 0x0a)
 		{
 			opcode = opnone;
-
-			// skip whitespace
-			while(*parser == 32 || *parser == 9)
-				parser++;
-
-			if(*parser != 0 && *parser != ';' && *parser != 0x0d && *parser != 0x0a)
+			// skip past the white space
+			while (*parser == 32 || *parser == 9) parser++;
+			// check to see if at the end of the line or at a comment
+			if (*parser != 0 && *parser != ';' && *parser != 0x0d
+				&& *parser != 0x0a)
 			{
-				if(*parser == '.')
+				// now check to see if it's an opcode, a label or data
+				// check to see if preproc
+				if (*parser == '.')
 				{
+					char fname[80];
+					int i;
+					parser++;
+					if (matches(parser,"include"))
+					{ /* have included another file */
+						while (*parser != 32 && *parser != 9) parser++;
+						while (*parser == 32 || *parser == 9) parser++;
+						if (*parser != '"')
+						{
+							printf("** include definition with no open quotes ** ");
+							printf("line %d, file %s\n",linenum,infile);
+							printf(readbuffer);
+							exit(1);
+						}
+						parser++; // get rid of `"'
+						i = 0;
+						while (*parser != '"')
+						{
+							if (*parser == 32 || *parser == 0 || *parser == 0x0a)
+							{
+								printf("** include definition with no closing quotes ** ");
+								printf("line %d, file %s\n",linenum,infile);
+								printf(readbuffer);
+								exit(1);
+							}
+							if (i>=79)
+							{
+								printf("** filename to long ** ");
+								printf("line %d, file %s\n",linenum,infile);
+								printf(readbuffer);
+								exit(1);
+							}
+							fname[i]=*parser;
+							parser++;
+							i++;
+						}
+						fname[i]=0;
+						parse(fname,fpout,pass);
+						// force to continue to next line
+						opcode = 0;
+						*parser=0;
+						continue;
+					}
+					else
+						// origin has changed
+						if (matches(parser,"org"))
+						{
+							while (*parser != 32 && *parser != 9) parser++;
+							while (*parser == 32 || *parser == 9) parser++;
+							filesize = (offset-org)+filesize;
+							offset = getval(&parser,2);
+							org = offset;
+						}
+						if (matches(parser,"echo"))
+						{
+							while (*parser != 32 && *parser != 9) parser++;
+							parser++;
+							if (pass==2)
+								printf("%s",parser);
+							*parser=0;
+							continue;
+						}
+				}
+				else
+				{
+					// now continue on with the rest of the program 
+					if (*parser == '@') // it's a label
+					{
+						if (pass == 1)
+							putlabel(parser);
+						else
+							if (checklabel(&parser))
+								printf("** label redundency check failed ** line %d, file %s\n",
+								linenum,infile);
+						if (errorflag)
+						{ // an error occured
+							printf("line %d, file %s\n",linenum,infile);
+							printf(readbuffer);
+							exit(1);
+						}
+						// now skip past the label
+						while(*parser != ':' && *parser != ';' && *parser !=0)
+							parser++;
+						if (*parser != ':')
+						{
+							printf("** Incomplete label ** line %d, file %s\n",
+								linenum,infile);
+							printf(readbuffer);
+							exit(1);
+						}
+						parser++;
+					}
 				}
 			}
 		}
 	}
+	fclose(fpin);
 }
 
 char outfile[13],ext[]=".com";
