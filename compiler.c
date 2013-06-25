@@ -1682,6 +1682,19 @@ void assemble(int opcode,unsigned long operands[3],unsigned long immediates[3],
 				errorflag = 1;
 			}
 }
+
+/* TEST */
+char * strcat(char *dest, const char *src)
+{
+    size_t i,j;
+    for (i = 0; dest[i] != '\0'; i++)
+        ;
+    for (j = 0; src[j] != '\0'; j++)
+        dest[i+j] = src[j];
+    dest[i+j] = '\0';
+    return dest;
+}
+
 /* parse out the file one line at a time */
 void parse(char * infile,FILE * fpout,int pass)
 {

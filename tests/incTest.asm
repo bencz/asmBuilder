@@ -3,7 +3,7 @@
 ; written by Alexandre Savelli Bencz
 ;--------------------------------------------------------------------------- 
 
-.include "std.inc"
+.include "include\std.inc"
 
 ;--------------------------------------------------------------------------- 
 ; here comes the code  
