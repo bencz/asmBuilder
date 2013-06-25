@@ -671,7 +671,7 @@ char stringlen(char * source)
 }
 
 /* check to see if sub-string is in the string at the current dest */
-char matches(char * source,char * dest)
+char matches(char *source,char *dest)
 {
 	int i,j=0;
 	if (source == NULL)
@@ -692,10 +692,10 @@ char matches(char * source,char * dest)
 }
 
 /* forward reference */
-unsigned long getlabel(char ** tmp);
+unsigned long getlabel(char **tmp);
 
 /* parse out a value from a string */
-unsigned long getval(char ** input,int pass)
+unsigned long getval(char **input,int pass)
 {
 	unsigned long ret = 0;
 	char neg = 0,hex = 0;
@@ -750,11 +750,11 @@ unsigned long getval(char ** input,int pass)
 						unsigned short oldret;
 						int i;
 						oldret = ret;
-						(short)ret = 0;
+						ret = (short)0;
 						i = 0;
 						while (oldret)
 						{
-							(short)ret = ret + ((oldret % 10) << (i*4));
+							ret = (short)(ret + ((oldret % 10) << (i*4)));
 							oldret /= 10;
 							i++;
 						}
@@ -770,11 +770,10 @@ unsigned long getval(char ** input,int pass)
 					else
 						/* calculate the value */
 						if (hex)
-							(int)ret = ret << 4 | ((**input<'A')?((**input-'0')%10):
-							(((**input | 0x20)-('A'-10))%16));
+							ret = (int)(ret << 4 | ((**input<'A')?((**input-'0')%10) : (((**input | 0x20)-('A'-10))%16)));
 						else
 							if (**input >= '0' && **input <= '9')
-								(int)ret = ret * 10 + ((**input - '0')%10);
+								ret = (int)(ret * 10 + ((**input - '0')%10));
 							else
 							{
 								printf("** invalid immediate ** ");
@@ -788,11 +787,11 @@ unsigned long getval(char ** input,int pass)
 						unsigned short oldret;
 						int i;
 						oldret = ret;
-						(short)ret = 0;
+						ret = (short)0;
 						i = 0;
 						while (oldret)
 						{
-							(short)ret = ret + ((oldret % 10) << (i*4));
+							ret = (short)(ret + ((oldret % 10) << (i*4)));
 							oldret /= 10;
 							i++;
 						}
@@ -805,7 +804,7 @@ unsigned long getval(char ** input,int pass)
 			return ret;
 }
 
-void writebuffer(const void * ptr,int size,int count,FILE * fp)
+void writebuffer(const void *ptr,int size,int count,FILE *fp)
 {
 	int i;
 
@@ -821,7 +820,7 @@ void writebuffer(const void * ptr,int size,int count,FILE * fp)
 }
 
 /* insert equate value into string */
-char resolveequate(char * tmp,int pass)
+char resolveequate(char *tmp,int pass)
 {
 	tetable * next = etable;
 	int len,i;
