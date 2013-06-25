@@ -515,17 +515,163 @@ topcodes opcodes[NUMINSTRUCTIONS] =
 	op32bit,1,0x66,0x00,0x00,none,none,none,Inothing
 };
 
-
-int stringlen(char *str)
+unsigned char cal1reg(unsigned long val1)
 {
-	int i=0;
-	while(str[i] != 0)
-		i++;
+	unsigned char firstregvalue=0;
+	int j;
+	for (j=0;j<NUMREGS;j++)
+		if ((val1 & 0x0000fff0) == (registers[j].flag & 0x0000fff0))
+			firstregvalue = registers[j].value;
+	return (firstregvalue);
+}
+
+unsigned char cal2reg(unsigned long val1)
+{
+	unsigned char firstregvalue=0;
+	int j;
+	for (j=0;j<NUMREGS;j++)
+		if ((val1 & 0x0000fff0) == (registers[j].flag & 0x0000fff0))
+			firstregvalue = registers[j].value;
+	return (firstregvalue << 3);
+}
+
+/* determine if register can be mem referenced */
+unsigned char ismemreg(unsigned char reg)
+{
+	if (reg == 3)  /* bx */
+		return 0x07;
+	else
+		if (reg == 5)  /* bp */
+			return 0x06;
+		else
+			if (reg == 7)  /* di */
+				return 0x05;
+			else
+				if (reg == 6)  /* si */
+					return 0x04;
+				else
+					if (reg != 0)
+					{
+						printf("** invalid memory register ** ");
+						errorflag = 1;
+						return 0;
+					}
+					return 0x06;
+}
+
+/* can have more than one register in mem ref */
+unsigned char addsecondval(unsigned char val1,unsigned char val2)
+{
+	unsigned char tmp;
+
+	if (val1 < val2)
+	{
+		tmp = val1;
+		val1 = val2;
+		val2 = tmp;
+	}
+	if (val1 == 0x07 && val2 == 0x04) /* bx+si */
+		return 0x00;
+	else
+		if (val1 == 0x07 && val2 == 0x05) /* bx+di */
+			return 0x01;
+		else
+			if (val1 == 0x06 && val2 == 0x04) /* bp+si */
+				return 0x02;
+			else
+				if (val1 == 0x06 && val2 == 0x05) /* bp+di */
+					return 0x03;
+				else
+				{
+					printf("** invalid memory register combination ** ");
+					errorflag = 1;
+					return 0;
+				}
+
+}
+
+/* This may be a bit sloppy, it's possibly slow and I could replace
+it with a table, but for now it works */
+unsigned char calculateregvalue(unsigned long val1,unsigned long val2,
+								unsigned short * instruct)
+{
+	unsigned char firstregvalue=0,secondregvalue=0;
+	unsigned char ret;
+	int j;
+
+	/* get the first operand */
+	for (j=0;j<NUMREGS;j++)
+		if ((val1 & 0x0000fff0) == (registers[j].flag & 0x0000fff0))
+			firstregvalue = registers[j].value;
+	for (j=0;j<NUMREGS;j++)
+		if ((val2 & 0x0000fff0) == (registers[j].flag & 0x0000fff0))
+			secondregvalue = registers[j].value;
+
+	/* first register is a memory reference, so calculate it's value */
+	if (val1 & memref)
+	{
+		ret = ismemreg(firstregvalue);
+		if (memreg2val)
+			ret = addsecondval(ret,ismemreg(memreg2val));
+		ret = secondregvalue << 3 | ret;
+		if (firstregvalue == 0)
+			*instruct |= Iimmedfirst;
+		else
+			if (memimmediate > 0xff)
+			{
+				*instruct |= Iimmedfirst;
+				ret |= 0x80;
+			}
+			else
+				if (memimmediate != 0 || firstregvalue == 0x05)
+				{
+					ret |= 0x40;
+					*instruct |= Iimmedfirst;
+					*instruct |= Iwrite8;
+				}
+				return ret;
+	}
+	else
+		/* second register is a memory reference, so calculate it's value */
+		if (val2 & memref)
+		{
+			ret = ismemreg(secondregvalue);
+			if (memreg2val)
+				ret = addsecondval(ret,ismemreg(memreg2val));
+			ret = firstregvalue << 3 | ret;
+			/* mem immediate */
+			if (secondregvalue == 0)
+				*instruct |= Iimmedsecond;
+			else
+				if (memimmediate > 0xff)
+				{
+					ret |= 0x80;
+					*instruct |= Iimmedsecond;
+				}
+				else
+					if (memimmediate != 0 || secondregvalue == 0x05)
+					{
+						ret |= 0x40;
+						*instruct |= Iimmedsecond;
+						*instruct |= Iwrite8;
+					}
+					return ret;
+		}
+		/* it's just a register combination */
+		else
+			return (((firstregvalue << 3 | secondregvalue)& 0x3f) | 0xc0);
+}
+
+/* get the length of a string */
+char stringlen(char * source)
+{
+	int i = 0;
+	while (source[i]!=0) i++;
 	return i;
 }
 
-// check to see if sub-string is in the string at the current dest
-char matches(char *source, char *dest)
+/* check to see if sub-string is in the string at the current dest */
+char matches(char * source,char * dest)
 {
 	int i,j=0;
 	if (source == NULL)
@@ -538,14 +684,1006 @@ char matches(char *source, char *dest)
 		;i++)
 		if (lower(source[i]) != lower(dest[i]))
 			return 0;
-	while (dest[j]!=0 && dest[j]!=']')
-		j++;
+	while (dest[j]!=0 && dest[j]!=']') j++;
 	if (i<j)
 		return 0;
 	else
 		return 1;
 }
 
+/* forward reference */
+unsigned long getlabel(char ** tmp);
+
+/* parse out a value from a string */
+unsigned long getval(char ** input,int pass)
+{
+	unsigned long ret = 0;
+	char neg = 0,hex = 0;
+
+	if (**input == '+')(*input)++;
+	else
+		if (**input == '-'){(*input)++;neg=1;}
+		if (**input == '?'){(*input)++;return 0;}
+		if (**input == '$'){(*input)++;return offset;}
+		if (**input == '@' && pass == 2) return getlabel(input);
+		if (**input == '0'){(*input)++;hex=1;}
+		if (**input == '@' && pass == 1)
+		{
+			while (**input != 0 && **input != 0x0a && **input != ']'
+				&& **input !=';' && **input != 32 && **input != 9
+				&& **input != '+' && **input != '-' && **input != '*' &&
+				**input != '/' && **input != ';')
+				(*input)++;
+			return 0xffff;
+		}
+		/* ran across a character quote */
+		if (**input == 39)
+		{
+			(*input)++;
+			ret = (unsigned long)(**input);
+			(*input)++;
+			if (**input != 39)
+			{
+				ret = ((unsigned long)(**input) << 8) + ret;
+				(*input)++;
+			}
+
+			if (**input != 39)
+			{
+				printf("** no closing quote on character ** ");
+				errorflag = 1;
+			}
+			(*input)++;
+		}
+		else
+			while (**input != ']' && **input != ',' && **input != 32 && **input != 0x0d
+				&& **input != 0x0a && **input != 0 && **input != 9
+				&& **input != ')' && **input != '+' && **input != '-' &&
+				**input != '/'  && **input != '*' && **input != ';')
+			{
+				if ((**input|0x20)!= 'h')
+				{
+					/* convert a dec value to a hex value */
+					if (((**input | 0x20) >= ('a')) && ((**input | 0x20) <= ('f'))
+						&& !hex)
+					{
+						unsigned short oldret;
+						int i;
+						oldret = ret;
+						(short)ret = 0;
+						i = 0;
+						while (oldret)
+						{
+							(short)ret = ret + ((oldret % 10) << (i*4));
+							oldret /= 10;
+							i++;
+						}
+						hex = 1;
+					}
+					/* pointer reference */
+					if (**input == ':')
+					{
+						PointerRef = 1;
+						ret <<= 16;
+						(*input)++;
+					}
+					else
+						/* calculate the value */
+						if (hex)
+							(int)ret = ret << 4 | ((**input<'A')?((**input-'0')%10):
+							(((**input | 0x20)-('A'-10))%16));
+						else
+							if (**input >= '0' && **input <= '9')
+								(int)ret = ret * 10 + ((**input - '0')%10);
+							else
+							{
+								printf("** invalid immediate ** ");
+								errorflag = 1;
+								return 0;
+							}
+				}
+				else
+					if (!hex) /* if calculated in B10, but in B16 */
+					{
+						unsigned short oldret;
+						int i;
+						oldret = ret;
+						(short)ret = 0;
+						i = 0;
+						while (oldret)
+						{
+							(short)ret = ret + ((oldret % 10) << (i*4));
+							oldret /= 10;
+							i++;
+						}
+					}
+
+					(*input)++;
+			}
+			if (neg)
+				ret = (~ret)+1;
+			return ret;
+}
+
+void writebuffer(const void * ptr,int size,int count,FILE * fp)
+{
+	int i;
+
+	for (i = 0;i < (size*count);i++)
+	{
+		wbuffer[buffpos++] = ((char *)ptr)[i];
+		if (buffpos == WRITEBUFFERSIZE)
+		{
+			fwrite(wbuffer,WRITEBUFFERSIZE,1,fp) ;
+			buffpos = 0;
+		}
+	}
+}
+
+/* insert equate value into string */
+char resolveequate(char * tmp,int pass)
+{
+	tetable * next = etable;
+	int len,i;
+	char *lastpos,offsetflag = 0;
+	char filler[]="[0ffff]";
+
+	if (matches(tmp,"dup"))
+		return 2;
+	/* looking for an offset ? */
+	if (matches(tmp,"offset"))
+	{
+		lastpos = tmp;
+		len = 6;
+		while(*(tmp+len))
+		{
+			*tmp = *(tmp+len);
+			tmp++;
+		}
+		*tmp = 0;
+		tmp = lastpos;
+		while ((*tmp) == 32 || (*tmp) == 9 || (*tmp) == 0x0d)
+			tmp++;
+		offsetflag = 1;
+	}
+
+	for (i=0;i<NUMOPCODES;i++)
+		if (matches(tmp,str_opcodes[i].name))
+			return 2;
+	while (next != NULL && !matches(tmp,next->name))
+		next = next->next;
+
+	if (next)
+	{
+		/* get rid of old data */
+		lastpos = tmp;
+		len = stringlen(next->name);
+		while(*(tmp+len))
+		{
+			*tmp = *(tmp+len);
+			tmp++;
+		}
+		*tmp = 0;
+		/* insert new data */
+		len = stringlen(next->value);
+		/* are we looking for an offset? */
+		if (offsetflag)
+		{
+			len -= 2;
+			if (!next->flag)
+				return 0;
+			next->value++;
+		}
+		while( (tmp) != lastpos )
+		{
+			*(tmp+len) = *tmp;
+			tmp --;
+		}
+		*(tmp+len) = *tmp;
+		for (i=0;i<len;i++)
+			tmp[i] = next->value[i];
+		if (offsetflag)              /* correct the offset */
+			next->value--;
+	}
+	else
+		if (pass == 1)
+		{
+			lastpos = tmp;
+
+			for (len=0 ;(tmp[len] != 32 && tmp[len] != 9 && tmp[len] != 0x0d
+				&& tmp[len] != 0 && tmp[len] != ',' && tmp[len] != ';'
+				&& tmp[len] != ']');len++);
+			while(*(tmp+len))
+			{
+				*tmp = *(tmp+len);
+				tmp++;
+			}
+			*tmp = 0;
+			/* insert new data */
+			len = stringlen(filler);
+			/* are we looking for an offset? */
+			while( (tmp) != lastpos )
+			{
+				*(tmp+len) = *tmp;
+				tmp --;
+			}
+			lastpos=filler;
+			if (offsetflag)
+			{
+				len -= 2;
+				lastpos++;
+			}
+			*(tmp+len) = *tmp;
+
+			for (i=0;i<len;i++)
+				tmp[i] = lastpos[i];
+		}
+		else
+			return 0;
+	return 1;
+}
+
+
+char addequate(char ** label,int pass)
+{
+	static char buffer[256],buffer2[256];
+	int i,j,datalabel;
+
+	i = 0;
+	j = 0;
+	datalabel = 0;
+
+	while (**label != 32 && **label != 9 && **label != '=')
+	{
+		buffer[i] = **label;
+		i++;
+		(*label)++;
+	}
+	buffer[i] = 0;
+	while (**label == 32 || **label == 9) (*label)++;
+	if (matches(*label,"equ"))
+		(*label) +=3;
+	else
+		if ((**label) == '=')
+			(*label)++;
+		else
+			/* see if it is a label */
+			if (matches(*label,"db") || matches(*label,"dw"))
+				datalabel = 1;
+			else
+				return 0;
+
+	/* it's a label, so fill it whith an offset */
+	while (**label == 32 || **label == 9) (*label)++;
+	if (datalabel)
+	{
+		buffer2[0] = '[';
+		itoa(offset,&(buffer2[1]),10);
+		j = stringlen(buffer2);
+		buffer2[j] = ']';
+		buffer2[j+1] = 0;
+	}
+	else
+		/* else it's an equate, so fill it with it's value */
+	{
+		while (**label != ';' && **label != 0x0d
+			&& **label != 0x0a && **label != 0)
+		{
+			if (**label == '$')
+			{
+				itoa(offset,&(buffer2[j]),10);
+				j = stringlen(buffer2);
+			}
+			else
+			{
+				buffer2[j] = **label;
+				j++;
+			}
+			(*label)++;
+		}
+		buffer2[j] = 32;
+		while (buffer2[j] == 32 || buffer2[j] == 9)
+			buffer2[j--] = 0;
+	}
+
+	/* no table, make new one */
+	if (etable == NULL)
+	{
+		/* allocate mem for equate link */
+		if (!(etable = (tetable *)malloc(sizeof(tetable))))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return 0;
+		}
+		etable->next = NULL;
+		/* allocate mem for equate name */
+		j=stringlen(buffer)+1;
+		if(!(etable->name = (char *)malloc(j)))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return 0;
+		}
+		for (i=0;i<j;i++)
+			etable->name[i] = buffer[i];
+		/* allocate mem for replacement value */
+		j=stringlen(buffer2)+1;
+		if (!(etable->value = (char *)malloc(j)))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return 0;
+		}
+		for (i=0;i<j;i++)
+			etable->value[i] = buffer2[i];
+	}
+
+	else
+	{
+		tetable * next = etable;
+		/* run through the list */
+		while (next->next != NULL)
+		{
+			if (matches(next->name,buffer))
+			{
+				/* it's a label, can't reuse it */
+				if (datalabel)
+				{
+					if(pass == 1)
+					{
+						printf("** name is currently being used ** ");
+						errorflag = 1;
+						return 0;
+					}
+					if (matches(next->value+1,buffer2+1)==0)
+						dirtylabels |= 2;
+				}
+				/* already in list, just replace value */
+				free(next->value);
+				j = stringlen(buffer2)+1;
+				if (!(next->value = (char *)malloc(j)))
+				{
+					printf("!! OUCH, I'm out of memory !! ");
+					errorflag = 1;
+					return 0;
+				}
+				for (i=0;i<j;i++)
+					next->value[i] = buffer2[i];
+				return 1;
+			}
+			next = next->next;
+		}
+
+		/* already in list, just replace value */
+		if (matches(next->name,buffer))
+		{
+			/* it's a label, can't reuse it */
+			if (datalabel)
+			{
+				if (pass == 1)
+				{
+					printf("** name is currently being used ** ");
+					errorflag = 1;
+					return 0;
+				}
+				if (!matches(next->value+1,buffer2+1))
+					dirtylabels |= 2;
+			}
+			free(next->value);
+			j = stringlen(buffer2)+1;
+			if(!(next->value = (char *)malloc(j)))
+			{
+				printf("!! OUCH, I'm out of memory !! ");
+				errorflag = 1;
+				return 0;
+			}
+			for (i=0;i<j;i++)
+				next->value[i] = buffer2[i];
+			return 1;
+		}
+
+		/* now add to the list */
+		if (!(next->next = (tetable *)malloc(sizeof(tetable))))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return 0;
+		}
+		next = next->next;
+		next->next = NULL;
+		if (datalabel)            /* set the data flag */
+			next->flag = 1;
+		j=stringlen(buffer)+1;
+		if(!(next->name = (char *)malloc(j)))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return 0;
+		}
+		for (i=0;i<j;i++)
+			next->name[i] = buffer[i];
+		j=stringlen(buffer2)+1;
+		if(!(next->value = (char *)malloc(j)))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return 0;
+		}
+		for (i=0;i<j;i++)
+			next->value[i] = buffer2[i];
+	}
+	return 1;
+
+}
+
+/* get immediate from label table */
+unsigned long getlabel(char ** tmp)
+{
+	unsigned long ret = 0;
+	tltable * next = ltable;
+	while (next != NULL && !matches(*tmp,next->name))
+		next = next->next;
+	if (next)
+	{
+		ret = next->value;
+		(*tmp)+=stringlen(next->name);
+	}
+	else
+	{
+		printf("** label not defined ** ");
+		errorflag = 1;
+	}
+	return ret;
+}
+
+char checklabel(char ** tmp)
+{
+	tltable * next = ltable;
+	while (next != NULL && !matches(*tmp,next->name))
+		next = next->next;
+	if (next)
+	{
+		(*tmp)+=stringlen(next->name);
+		if (next->value!=offset)
+		{
+			next->value=offset;
+			dirtylabels |= 1;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/* put a value in the label table */
+void putlabel(char *label)
+{
+	static char buffer[256];
+	int i;
+	i = 0;
+	while (*label != ':' && *label != 0)
+	{ buffer[i]=*label;label++;i++;}
+	buffer[i] = 0;
+	if (*label != ':') return;
+
+	/* no table, make new one */
+	if (ltable == NULL)
+	{
+		if(!(ltable = (tltable *)malloc(sizeof(tltable))))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return;
+		}
+		ltable->next = NULL;
+		if(!(ltable->name = (char *)malloc(stringlen(buffer)+1)))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return;
+		}
+		for (i=0;i<=stringlen(buffer);i++)
+			ltable->name[i] = buffer[i];
+		ltable->value =offset;
+	}
+	/* table exists, just add to it */
+	else
+	{
+		tltable * next = ltable;
+		/* run through the list */
+		while (next->next != NULL)
+		{
+			if (matches(next->name,buffer) || matches(next->next->name,buffer))
+			{
+				printf("** duplicate label ** ");
+				errorflag=1;
+				return;
+			}
+			next = next->next;
+		}
+		/* now add to the list */
+		if(!(next->next = (tltable *)malloc(sizeof(tltable))))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return;
+		}
+		next = next->next;
+		next->next = NULL;
+		if(!(next->name = (char *)malloc(stringlen(buffer)+1)))
+		{
+			printf("!! OUCH, I'm out of memory !! ");
+			errorflag = 1;
+			return;
+		}
+		for (i=0;i<=stringlen(buffer);i++)
+			next->name[i] = buffer[i];
+		next->value =offset;
+	}
+}
+
+/* get the opcode number, the registers, immediates, and mem references */
+void getcodes(char ** instruct,int * opcode,unsigned long operands[3],unsigned long
+			  immediates[3],char pass,FILE * fpout)
+{
+	int i,j,mem,regsize;
+	char done;
+
+	*opcode = opnone;
+	/* run through list to see if opcode is in it */
+	for (i=0;i<NUMOPCODES && *opcode==opnone;i++)
+		if (matches(*instruct,str_opcodes[i].name))
+		{
+			(*opcode) = str_opcodes[i].value;
+			(*instruct) += stringlen(str_opcodes[i].name);
+		}
+		if (*opcode != opnone) /* code was in the list */
+		{
+			/* get rid of white space */
+			while(**instruct == 32 || **instruct == 9)
+				(*instruct)++;
+			/* clear these out */
+			for (j=0;j<3;j++)
+			{
+				operands[j]=0;
+				immediates[j]=0;
+			}
+			memimmediate = 0; /* set this zero too */
+			PointerRef = 0;
+
+			if (**instruct == 0 || **instruct == ';' || **instruct== 0x0d ||
+				**instruct== 0x0a)
+				done = 1;
+			else
+				done = 0;
+
+			mem = 0;
+			regsize = 0;
+			for (j=0;j<3 && !done;j++)
+			{
+				while(**instruct == 32 || **instruct == 9)
+					(*instruct)++;
+				/* is it an override? */
+				if (matches(*instruct,"byte") || matches(*instruct,"word") )
+				{
+					if (matches(*instruct,"byte"))
+						regsize = 1;
+					else
+						regsize = 2;
+					(*instruct)+=4;
+					while (**instruct == 32 || **instruct == 9) (*instruct)++;
+					if (matches(*instruct,"ptr"))
+					{
+						(*instruct)+=3;
+						while (**instruct == 32 || **instruct == 9) (*instruct)++;
+					}
+				}
+				/* is it memory? */
+				if (**instruct == '[')
+				{
+					memreg2val = 0;
+					mem = 1;
+					(*instruct)++;
+				}
+
+				/* is it register? */
+				for(i=0;i<NUMREGS && !operands[j];i++)
+					if (matches(*instruct,registers[i].name))
+					{
+						operands[j] = registers[i].flag;
+						(*instruct) += stringlen(registers[i].name);
+					}
+					/* check equates */
+					if ((**instruct >= 65 && **instruct <= 90)  ||
+						(**instruct >= 97 && **instruct <= 122) &&
+						operands[j]==0)
+					{
+						if (resolveequate(*instruct,pass) == 1)
+						{
+							j--;
+							continue;
+						}
+						else
+						{
+							return;
+						}
+					}
+
+					if (**instruct == ':')
+					{
+						if ((operands[j] & 0x00000007) != seg16)
+						{
+							printf("** invalide segment reference ** ");
+							errorflag=1;
+							return;
+						}
+						if ((operands[j] & 0x0000fff0) != regds)
+						{
+							offset++;
+							if (pass==2)
+							{
+								char out = 0x26 | (registers[i-1].value << 3);
+								writebuffer(&out,1,1,fpout);
+							}
+						}
+						(*instruct)++;
+						operands[j] = 0;
+						j--;
+						continue;
+					}
+
+					/* adjust for [reg] reference */
+					if (mem && ((operands[j] & 0x00000007) == reg16))
+					{
+						/* is it register? */
+						(*instruct) ++;
+						for(i=0;i<NUMREGS;i++)
+							if (matches(*instruct,registers[i].name))
+							{
+								memreg2val = registers[i].value;
+								(*instruct) += (stringlen(registers[i].name)+1);
+							}
+							(*instruct) --;
+							if ((**instruct >= 65 && **instruct <= 90)  ||
+								(**instruct >= 97 && **instruct <= 122) &&
+								memreg2val==0)
+							{
+								if (resolveequate(*instruct,pass)==1)
+								{
+									for(i=0;i<NUMREGS;i++)
+										if (matches(*instruct,registers[i].name))
+										{
+											memreg2val = registers[i].value;
+											(*instruct) += (stringlen(registers[i].name)+1);
+										}
+								}
+							}
+
+							while ( (**instruct) == 32 || (**instruct) == 9)
+								(*instruct)++;
+							/* allow for a little arithmetic */
+							while ( (**instruct) == '+' || (**instruct) == '-' ||
+								(**instruct) == '*' || (**instruct) == '/')
+							{
+								char operation;
+								operation = **instruct;
+								(*instruct)++;
+								while ( (**instruct) == 32 || (**instruct) == 9)
+									(*instruct)++;
+								/* check on equate */
+								if ((**instruct >= 65 && **instruct <= 90)  ||
+									(**instruct >= 97 && **instruct <= 122))
+									if (!resolveequate(*instruct,pass))
+									{
+										printf("** Unresolved Equate ** ");
+										errorflag = 1;
+										return;
+									}
+									while ( (**instruct) == 32 || (**instruct) == 9)
+										(*instruct)++;
+									/* now determine which instruction to use */
+									switch (operation)
+									{
+									case '+' : immediates[j] += getval(instruct,pass);
+										break;
+									case '-' : immediates[j] -= getval(instruct,pass);
+										break;
+									case '*' : immediates[j] *= getval(instruct,pass);
+										break;
+									case '/' : immediates[j] /= getval(instruct,pass);
+										break;
+									}
+									if (errorflag ) return;
+									while ( (**instruct) == 32 || (**instruct) == 9)
+										(*instruct)++;
+							}
+					}
+					else
+						if (operands[j] == opnone)
+						{
+							/* is it instruction? */
+							if ((**instruct >= 65 && **instruct <= 90) ||
+								(**instruct >= 97 && **instruct <= 122))
+								done = 1;
+							/* is it immediate? */
+							else
+							{
+								immediates[j] = getval(instruct,pass);
+								if (errorflag ) return;
+								while ( (**instruct) == 32 || (**instruct) == 9)
+									(*instruct)++;
+								/* allow for a little arithmetic */
+								while ( (**instruct) == '+' || (**instruct) == '-' ||
+									(**instruct) == '*' || (**instruct) == '/')
+								{
+									char operation;
+									operation = **instruct;
+									(*instruct)++;
+									while ( (**instruct) == 32 || (**instruct) == 9)
+										(*instruct)++;
+									/* resolve equate */
+									while ((**instruct >= 65 && **instruct <= 90)  ||
+										(**instruct >= 97 && **instruct <= 122))
+										if(!resolveequate(*instruct,pass))
+										{
+											printf("** Unresolved Equate ** ");
+											errorflag = 1;
+											return;
+										}
+										while ( (**instruct) == 32 || (**instruct) == 9)
+											(*instruct)++;
+										/* now determine which instruction to use */
+										switch (operation)
+										{
+										case '+' : immediates[j] += getval(instruct,pass);
+											break;
+										case '-' : immediates[j] -= getval(instruct,pass);
+											break;
+										case '*' : immediates[j] *= getval(instruct,pass);
+											break;
+										case '/' : immediates[j] /= getval(instruct,pass);
+											break;
+										}
+										if (errorflag ) return;
+										if (errorflag ) return;
+										while ( (**instruct) == 32 || (**instruct) == 9)
+											(*instruct)++;
+								}
+								if (PointerRef)
+									operands[j] = pointer;
+								else
+									if (((j!=0) && ((operands[0] & 0x0000000f) == reg8) && (!mem))
+										|| ((regsize == 1)&& (j != 0)))
+										operands[j] = immed8;
+									else
+										if (mem)
+											operands[j] = reg16;
+										else
+											operands[j] = immed16;
+								if ((j!=0) && (operands[0] & memref) && (!regsize))
+								{
+									printf("** Memory Reference needs override ** ");
+									errorflag = 1;
+									return;
+								}
+							}
+						}
+
+						/* finish off the memory reference */
+						if (mem)
+						{
+							if (**instruct != ']')
+							{
+								fprintf(stderr,"** No closing bracket in memory reference ** ");
+								errorflag = 1;
+								return;
+							}
+							else
+							{
+								memimmediate = immediates[j];
+								operands[j] |= memref;
+								(*instruct)++;
+							}
+						}
+						/* get the next param */
+						while (**instruct != ',' && **instruct != ';' && **instruct != 0
+							&& !done)
+							(*instruct)++;
+						if (**instruct == ';' || **instruct == 0 || done)
+							done = 1;
+						else
+						{
+							/* get rid of white space */
+							(*instruct)++;
+							while(**instruct == 32 || **instruct == 9)
+								(*instruct)++;
+						}
+						mem = 0;
+			}
+		}
+		else
+			/* ran across an invalid name, see if equate */
+		{
+			if (!addequate(instruct,pass))
+			{
+#ifdef DEBUG
+				printf ("%s ** invalid instruction ** ",*instruct);
+#else
+				printf ("** invalid instruction ** ");
+#endif
+				errorflag = 1;
+				return;
+			}
+		}
+		if ( ( ((*opcode) == opshl) || ((*opcode) == opshr)
+			|| ((*opcode) == oprol) || ((*opcode) == opror)
+			|| ((*opcode) == opsal) || ((*opcode) == opsar)  )
+			&& immediates[1] ==  1 )
+		{
+			operands[1] = opnone;
+			immediates[1] = 0;
+		}
+}
+
+/* take the parsed values and write them to the file */
+void assemble(int opcode,unsigned long operands[3],unsigned long immediates[3],
+			  int pass,FILE * fp)
+{
+	int i;
+	char done = 0;
+	unsigned short instruct;
+
+	for (i = 0;i<NUMINSTRUCTIONS && !done;i++)
+		if (opcode == opcodes[i].ocode)
+			if ((((operands[0] & 0x0000000f) == (opcodes[i].val1))||
+				((operands[0] & 0x0000fff8) == (opcodes[i].val1)))&&
+				(((operands[1] & 0x0000000f) == (opcodes[i].val2))||
+				((operands[1] & 0x0000fff8) == (opcodes[i].val2)))
+#ifdef CODE32BIT
+				||(((operands[2] & 0x0000000f) == (opcodes[i].val3))||
+				((operands[2] & 0x0000fff8) == (opcodes[i].val3)))
+#endif
+				)
+			{
+				unsigned char opcode1regval,opcode2regval,opcode3regval;
+				done = 1;
+
+				/* == write the opcodes == */
+				instruct = opcodes[i].instruct;
+
+				offset += opcodes[i].length;
+				if (pass == 2)
+					writebuffer(opcodes[i].code,1,opcodes[i].length,fp);
+
+				/* == write the operands == */
+
+				/* find the registers' values and calculate code values */
+				if (instruct & Icalreg)
+				{
+					unsigned char regvalue;
+					if (instruct & Ifirstval &&
+						instruct & Isecondval)
+					{
+						if (instruct & Iswapval)
+							regvalue = calculateregvalue(operands[1],operands[0],
+							&instruct);
+						else
+							regvalue = calculateregvalue(operands[0],operands[1],
+							&instruct);
+						offset += 1;
+						if (pass == 2)
+							writebuffer((char *)&regvalue,1,1,fp) ;
+					}
+					else
+						if (instruct & Ifirstval)
+						{
+							if (instruct & Ical1)
+								regvalue = cal1reg(operands[0]) |
+								opcodes[i].code[opcodes[i].length];
+							else
+								if (instruct & Ical2)
+									regvalue = cal2reg(operands[0]) |
+									opcodes[i].code[opcodes[i].length];
+								else
+									regvalue = calculateregvalue(operands[0],0,&instruct)|
+									opcodes[i].code[opcodes[i].length];
+							offset += 1;
+							if (pass == 2)
+								writebuffer((char *)&regvalue,1,1,fp) ;
+						}
+						else
+							if (instruct & Isecondval)
+							{
+								regvalue = calculateregvalue(0,operands[1],&instruct);
+								offset += 1;
+								if (pass == 2)
+									writebuffer((char *)&regvalue,1,1,fp) ;
+							}
+				}
+				/* assemble in the immediates */
+				if (instruct & Iimmedfirst)
+				{
+					if ((opcodes[i].val1 & 0x00000007) == immed8 )
+					{
+						offset += 1;
+						if (pass == 2)
+							writebuffer((char *)&immediates[0],1,1,fp) ;
+					}
+					else
+						if ((opcodes[i].val1 & 0x00000007) == pointer )
+						{
+							offset += 4;
+							if (pass == 2)
+								writebuffer((char *)&immediates[0],4,1,fp) ;
+						}
+						else
+						{
+							offset += 2;
+							if (instruct & Iwrite8)
+								offset--;
+							if (instruct & Iwrite8 && pass == 2 && instruct & Ijump)
+								offset = offset;
+							if (instruct & Ijump)
+								immediates[0] -= offset;
+							if (pass == 2)
+							{
+								if (instruct & Iwrite8)
+								{
+									if(instruct & Ijump &&
+										(immediates[0] & 0xffffff80))
+										if((~immediates[0]) & 0xffffff80)
+										{
+											if ((long int)immediates[0] < -128)
+												immediates[0] = -1-immediates[0];
+											printf("** relative jump off by %d bytes ** ",
+												immediates[0] - 127);
+											errorflag = 1;
+										}
+										writebuffer(&immediates[0],1,1,fp) ;
+								}
+								else
+									writebuffer(&immediates[0],2,1,fp) ;
+							}
+						}
+				}
+				if (instruct & Iimmedsecond)
+				{
+					if ((opcodes[i].val2 & 0x00000007) == immed8 )
+					{
+						offset += 1;
+						if (pass == 2)
+							writebuffer(&immediates[1],1,1,fp) ;
+					}
+					else
+						if ((opcodes[i].val2 & 0x00000007) == pointer )
+						{
+							offset += 4;
+							if (pass == 2)
+								writebuffer((char *)&immediates[1],4,1,fp) ;
+						}
+						else
+						{
+							offset += 2;
+							if (instruct & Iwrite8)
+								offset--;
+							/* now write the data to file */
+							if (pass == 2)
+							{
+								if (instruct & Iwrite8)
+									writebuffer(&immediates[1],1,1,fp) ;
+								else
+									writebuffer(&immediates[1],2,1,fp) ;
+							}
+						}
+				}
+			}
+			if (!done)
+			{
+				printf("** invalid opcode/operand combination ** ");
+				errorflag = 1;
+			}
+}
+/* parse out the file one line at a time */
 void parse(char * infile,FILE * fpout,int pass)
 {
 #ifndef DEBUG
@@ -571,19 +1709,19 @@ void parse(char * infile,FILE * fpout,int pass)
 			continue;
 		linenum ++;
 		parser = readbuffer;
-		// keep going if not at the end of the line or at a comment
+		/* keep going if not at the end of the line or at a comment */
 		while (*parser != 0 && *parser != ';' && *parser != 0x0d
 			&& *parser != 0x0a)
 		{
 			opcode = opnone;
-			// skip past the white space
+			/* skip past the white space */
 			while (*parser == 32 || *parser == 9) parser++;
-			// check to see if at the end of the line or at a comment
+			/* check to see if at the end of the line or at a comment */
 			if (*parser != 0 && *parser != ';' && *parser != 0x0d
 				&& *parser != 0x0a)
 			{
-				// now check to see if it's an opcode, a label or data
-				// check to see if preproc
+				/* now check to see if it's an opcode, a label or data */
+				/* check to see if preproc */
 				if (*parser == '.')
 				{
 					char fname[80];
@@ -600,7 +1738,7 @@ void parse(char * infile,FILE * fpout,int pass)
 							printf(readbuffer);
 							exit(1);
 						}
-						parser++; // get rid of `"'
+						parser++; /* get rid of `"' */
 						i = 0;
 						while (*parser != '"')
 						{
@@ -624,13 +1762,13 @@ void parse(char * infile,FILE * fpout,int pass)
 						}
 						fname[i]=0;
 						parse(fname,fpout,pass);
-						// force to continue to next line
+						/* force to continue to next line */
 						opcode = 0;
 						*parser=0;
 						continue;
 					}
 					else
-						// origin has changed
+						/* origin has changed */
 						if (matches(parser,"org"))
 						{
 							while (*parser != 32 && *parser != 9) parser++;
@@ -650,9 +1788,8 @@ void parse(char * infile,FILE * fpout,int pass)
 						}
 				}
 				else
-				{
-					// now continue on with the rest of the program 
-					if (*parser == '@') // it's a label
+					/* now continue on with the rest of the program */
+					if (*parser == '@') /* it's a label */
 					{
 						if (pass == 1)
 							putlabel(parser);
@@ -661,12 +1798,12 @@ void parse(char * infile,FILE * fpout,int pass)
 								printf("** label redundency check failed ** line %d, file %s\n",
 								linenum,infile);
 						if (errorflag)
-						{ // an error occured
+						{ /* an error occured */
 							printf("line %d, file %s\n",linenum,infile);
 							printf(readbuffer);
 							exit(1);
 						}
-						// now skip past the label
+						/* now skip past the label */
 						while(*parser != ':' && *parser != ';' && *parser !=0)
 							parser++;
 						if (*parser != ':')
@@ -678,6 +1815,194 @@ void parse(char * infile,FILE * fpout,int pass)
 						}
 						parser++;
 					}
+					else
+						/* check to see if data */
+						if (lower(*parser) == 'd' && (lower(*(parser+1)) == 'w'
+							|| lower(*(parser+1)) == 'b') )
+						{
+							parser++;
+							if (*parser == 'w') /* data word */
+							{
+								unsigned int retval;
+								parser++;
+								while(*parser==32 || *parser==9) parser++;
+								offset += 2;
+								/* check to see if an equate */
+								while ((*parser >= 65 && *parser <= 90)  ||
+									(*parser >= 97 && *parser <= 122))
+									if (!resolveequate(parser,pass))
+									{
+										printf("** Unresolved Equate ** ");
+										printf("line %d, file %s\n",linenum,infile);
+										printf(readbuffer);
+										exit(1);
+									}
+									if (pass==2)
+									{
+										retval = getval(&parser,pass);
+										writebuffer(&retval,2,1,fpout);
+									}
+									else
+										while (*parser != 0 && *parser != 0x0a
+											&& *parser != 9 && *parser !=';'
+											&& *parser != 32 && *parser != ',')
+											(parser)++;
+
+									while(*parser==',')
+									{
+										parser++;
+										while(*parser==32 || *parser==9) parser++;
+										offset += 2;
+										while ((*parser >= 65 && *parser <= 90)  ||
+											(*parser >= 97 && *parser <= 122))
+											if(!resolveequate(parser,pass))
+											{
+												printf("** Unresolved Equate ** ");
+												printf("line %d, file %s\n",linenum,infile);
+												printf(readbuffer);
+												exit(1);
+											}
+											if (pass==2)
+											{
+												retval = getval(&parser,pass);
+												writebuffer(&retval,2,1,fpout);
+											}
+											else
+												while (*parser != 0 && *parser != 0x0a
+													&& *parser != 9 && *parser !=';'
+													&& *parser != 32 && *parser != ',')
+													(parser)++;
+									}
+							}
+							else /* else data byte */
+							{
+								unsigned long retval;
+								parser++;
+								while(*parser==32 || *parser==9) parser++;
+								/* write a string to the file */
+								if (*parser == '"')
+								{
+									parser++;
+									while (*parser != '"' && *parser != 0)
+									{
+										offset++;
+										if (pass==2)
+											writebuffer(parser,1,1,fpout);
+										parser++;
+									}
+									if (*parser == '"') parser++;
+								}
+								/* else just write out a single byte */
+								else
+								{
+									while (((*parser >= 65 && *parser <= 90)  ||
+										(*parser >= 97 && *parser <= 122))
+										&& !matches(parser,"dup"))
+										if (!resolveequate(parser,pass))
+										{
+											printf("** Unresolved Equate ** ");
+											printf("line %d, file %s\n",linenum,infile);
+											printf(readbuffer);
+											exit(1);
+										}
+										retval = getval(&parser,pass);
+										/* get ready for dup command */
+										while (*parser == 32 || *parser == 9)
+											parser++;
+										if (matches(parser,"dup"))
+										{
+											int i,count;
+											count = retval;
+											while (*parser != 32 && *parser != 9
+												&& *parser != '(')
+												parser++;
+											while (*parser == 32 || *parser == 9)
+												parser++;
+											if (*parser=='(')
+												parser++;
+											while ((*parser >= 65 && *parser <= 90)  ||
+												(*parser >= 97 && *parser <= 122))
+												if (!resolveequate(parser,pass))
+												{
+													printf("** Unresolved Equate ** ");
+													printf("line %d, file %s\n",linenum,infile);
+													printf(readbuffer);
+													exit(1);
+												}
+												retval = getval(&parser,pass);
+												for (i=0;i<count;i++)
+												{
+													offset++;
+													if (pass==2)
+														writebuffer(&retval,1,1,fpout);
+												}
+												while (*parser != ')' && *parser != ';'
+													&& *parser != 0x00)
+													parser++;
+												if (*parser == ')') parser++;
+										}
+										else
+										{
+											offset += 1;
+											if (pass==2)
+												writebuffer(&retval,1,1,fpout);
+										}
+								}
+								/* now continue as long as there are ,'s */
+								while(*parser==',')
+								{
+									parser++;
+									while(*parser==32 || *parser==9) parser++;
+									if (*parser == '"')
+									{
+										parser++;
+										while (*parser != '"' && *parser != 0)
+										{
+											offset++;
+											if (pass==2)
+												writebuffer(parser,1,1,fpout);
+											parser++;
+										}
+										if (*parser == '"') parser++;
+									}
+									else
+									{
+										while((*parser >= 65 && *parser <= 90)  ||
+											(*parser >= 97 && *parser <= 122))
+											if (!resolveequate(parser,pass))
+											{
+												printf("** Unresolved Equate ** ");
+												printf("line %d, file %s\n",linenum,infile);
+												printf(readbuffer);
+												exit(1);
+											}
+											retval = getval(&parser,pass);
+											offset += 1;
+											if (pass==2)
+												writebuffer(&retval,1,1,fpout);
+									}
+								}
+							}
+						}
+						else
+							getcodes(&parser,&opcode,operands,immediates,pass,fpout);
+				if (errorflag)
+				{
+					printf("line %d, file %s\n",linenum,infile);
+					printf(readbuffer);
+					exit(1);
+				}
+				if (opcode)
+					assemble(opcode,operands,immediates,pass,fpout);
+				else
+					if(*parser >= 'A' && *parser <= 'Z' &&
+						*parser >= 'a' && *parser <= 'z')
+						addequate(&parser,pass);
+				if (errorflag)
+				{
+					printf("line %d, file %s\n",linenum,infile);
+					printf(readbuffer);
+					exit(1);
 				}
 			}
 		}
@@ -689,16 +2014,21 @@ char outfile[13],ext[]=".com";
 int main(int argc,char * argv[])
 {
 	int i;
-	FILE *fpout;
-	char *infile , *outfilestart;
+	FILE * fpout;
+	char * infile ,* outfilestart;
+
+	if (argc<=1)
+	{
+		printf("Usage mode: asmBuilder <fName>\n");
+		return -1;
+	}
 
 	infile = argv[1];
 	outfilestart = infile;
 
 	while (*infile)
 	{
-		if (*infile == '\\')
-			outfilestart = infile+1;
+		if (*infile == '\\') outfilestart = infile+1;
 		infile++;
 	}
 	infile = outfile;
@@ -718,16 +2048,34 @@ int main(int argc,char * argv[])
 	}
 	*infile = 0;
 
-	if (argc<=1)
-		printf("Usage: compiler <filename>\n");
-	else
+	// star all the process of compilation
+	fpout=fopen(outfile,"wb");
+	for (i=1;i<3;i++)
 	{
-		fpout=fopen(outfile,"wb");
-		for (i=1;i<3;i++)
-		{
-		}
-		fclose(fpout);
+		offset = org;
+		filesize = 0;
+		parse(argv[1],fpout,i);
+		fwrite(wbuffer,buffpos,1,fpout) ;
+		buffpos = 0;
+		if (i==1) putlabel("@@FinalOffset:");
 	}
+	fclose(fpout);
+	if (dirtylabels)
+	{
+		if (dirtylabels & 1)
+			printf("\n Rescanning due to dirty labels!\n");
+		dirtylabels = 0;
+		fpout=fopen(outfile,"wb");
+		offset = org;
+		filesize = 0;
+		parse(argv[1],fpout,2);
+		fwrite(wbuffer,buffpos,1,fpout) ;
+		if (dirtylabels & 1)
+			printf(" Rescan Failed!\n");
+		else
+			printf(" Rescan Successful!\n");
+	}
+	printf("\n  Done. %lu bytes written to %s.\n",(offset-org)+filesize,outfile);
 
 	return 0;
 }
